@@ -1,7 +1,0 @@
-{
-	"parent":"cta:item/apkws",
-	"textures":{
-		"0":"cta:item/apkws_hefrag_texture",
-		"particle":"cta:item/apkws_hefrag_texture"
-	}
-}

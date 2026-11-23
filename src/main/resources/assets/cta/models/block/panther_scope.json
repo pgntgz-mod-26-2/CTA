@@ -1,5 +1,0 @@
-{
-  "loader": "forge:obj",
-  "model": "cta:models/block/panther_scope.obj",
-  "flip-v": true
-}

@@ -1,7 +1,0 @@
-{
-  "credit": "CTA Proximity Fuse",
-  "parent": "minecraft:item/generated",
-  "textures": {
-    "layer0": "cta:item/fuse_proximity"
-  }
-}
