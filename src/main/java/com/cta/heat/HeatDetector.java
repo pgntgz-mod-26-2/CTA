@@ -161,17 +161,15 @@ public class HeatDetector {
     }
 
     public static double getSunHeat(Level level, Vec3 lookDirection) {
-        if (level.isClientSide) {
-            long dayTime = level.getDayTime() % 24000;
+        if (level.isClientSide()) {
+            long dayTime = level.getOverworldClockTime() % 24000;
             boolean isDaytime = dayTime < 12000;
 
             if (!isDaytime) {
                 return AMBIENT;
             }
 
-            float sunAngle = level.getSunAngle(1.0f);
-
-            double sunYaw = sunAngle * 2 * Math.PI;
+            double sunYaw = (dayTime / 24000.0) * 2.0 * Math.PI;
             Vec3 sunDirection = new Vec3(
                     -Math.sin(sunYaw),
                     Math.cos(sunYaw),
@@ -239,7 +237,7 @@ public class HeatDetector {
             temp -= 5;
         }
 
-        if (level.canSeeSky(pos) && level.isDay() && !level.isRaining()) {
+        if (level.canSeeSky(pos) && level.isBrightOutside() && !level.isRaining()) {
             temp += 5;
         }
 

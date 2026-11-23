@@ -2,27 +2,27 @@ package com.cta.config;
 
 import com.cta.entity.MissileEntity.GuidanceType;
 import com.cta.entity.MissileEntity.SteeringMethod;
-import net.minecraftforge.common.ForgeConfigSpec;
-import net.minecraftforge.fml.ModLoadingContext;
-import net.minecraftforge.fml.config.ModConfig;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.config.ModConfig;
+import net.neoforged.neoforge.common.ModConfigSpec;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public class MissileConfig {
-    public static final ForgeConfigSpec SPEC;
-    private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
+    public static final ModConfigSpec SPEC;
+    private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
     
-    public static final ForgeConfigSpec.BooleanValue ENABLE_CHUNK_LOADING;
-    public static final ForgeConfigSpec.IntValue MAX_FLIGHT_TICKS;
-    public static final ForgeConfigSpec.DoubleValue MAX_MISSILE_SPEED;
+    public static final ModConfigSpec.BooleanValue ENABLE_CHUNK_LOADING;
+    public static final ModConfigSpec.IntValue MAX_FLIGHT_TICKS;
+    public static final ModConfigSpec.DoubleValue MAX_MISSILE_SPEED;
     
-    public static final ForgeConfigSpec.DoubleValue FRAGMENT_COUNT_MULTIPLIER;
-    public static final ForgeConfigSpec.DoubleValue FRAGMENT_BLOCK_DAMAGE_THRESHOLD;
-    public static final ForgeConfigSpec.BooleanValue FRAGMENTS_BREAK_BLOCKS;
+    public static final ModConfigSpec.DoubleValue FRAGMENT_COUNT_MULTIPLIER;
+    public static final ModConfigSpec.DoubleValue FRAGMENT_BLOCK_DAMAGE_THRESHOLD;
+    public static final ModConfigSpec.BooleanValue FRAGMENTS_BREAK_BLOCKS;
     
-    public static final ForgeConfigSpec.DoubleValue HEAT_BASE_PENETRATION;
-    public static final ForgeConfigSpec.BooleanValue USE_CBC_BLOCK_RESISTANCE;
+    public static final ModConfigSpec.DoubleValue HEAT_BASE_PENETRATION;
+    public static final ModConfigSpec.BooleanValue USE_CBC_BLOCK_RESISTANCE;
     
     private static final Map<String, MissileTypeConfig> MISSILE_CONFIGS = new HashMap<>();
     
@@ -251,8 +251,8 @@ public class MissileConfig {
         return defaultConfig;
     }
     
-    public static void register() {
-        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, SPEC, "cta-missiles.toml");
+    public static void register(ModContainer modContainer) {
+        modContainer.registerConfig(ModConfig.Type.COMMON, SPEC, "cta-missiles.toml");
     }
     
     public enum MissileCategory {
@@ -269,27 +269,27 @@ public class MissileConfig {
         public MissileCategory category;
         public GuidanceType guidanceTypeDefault = GuidanceType.NONE;
         public SteeringMethod steeringMethodDefault = SteeringMethod.PROPORTIONAL_NAV;
-        public ForgeConfigSpec.IntValue fuelTicks;
-        public ForgeConfigSpec.DoubleValue thrust;
-        public ForgeConfigSpec.DoubleValue explosionPower;
-        public ForgeConfigSpec.DoubleValue gravity;
-        public ForgeConfigSpec.DoubleValue airResistance;
-        public ForgeConfigSpec.DoubleValue initialSpeed;
-        public ForgeConfigSpec.DoubleValue dropRate;
-        public ForgeConfigSpec.BooleanValue hasAirbrake;
-        public ForgeConfigSpec.DoubleValue glideRatio;
-        public ForgeConfigSpec.DoubleValue armorPenetration;
-        public ForgeConfigSpec.IntValue fragCount;
-        public ForgeConfigSpec.DoubleValue fragDamage;
-        public ForgeConfigSpec.DoubleValue fragRange;
+        public ModConfigSpec.IntValue fuelTicks;
+        public ModConfigSpec.DoubleValue thrust;
+        public ModConfigSpec.DoubleValue explosionPower;
+        public ModConfigSpec.DoubleValue gravity;
+        public ModConfigSpec.DoubleValue airResistance;
+        public ModConfigSpec.DoubleValue initialSpeed;
+        public ModConfigSpec.DoubleValue dropRate;
+        public ModConfigSpec.BooleanValue hasAirbrake;
+        public ModConfigSpec.DoubleValue glideRatio;
+        public ModConfigSpec.DoubleValue armorPenetration;
+        public ModConfigSpec.IntValue fragCount;
+        public ModConfigSpec.DoubleValue fragDamage;
+        public ModConfigSpec.DoubleValue fragRange;
         
-        public ForgeConfigSpec.ConfigValue<String> guidanceTypeStr;
-        public ForgeConfigSpec.ConfigValue<String> steeringMethodStr;
-        public ForgeConfigSpec.DoubleValue seekerFov;
-        public ForgeConfigSpec.DoubleValue seekerRange;
-        public ForgeConfigSpec.DoubleValue seekerMinTemp;
-        public ForgeConfigSpec.DoubleValue turnRate;
-        public ForgeConfigSpec.DoubleValue navGain;
+        public ModConfigSpec.ConfigValue<String> guidanceTypeStr;
+        public ModConfigSpec.ConfigValue<String> steeringMethodStr;
+        public ModConfigSpec.DoubleValue seekerFov;
+        public ModConfigSpec.DoubleValue seekerRange;
+        public ModConfigSpec.DoubleValue seekerMinTemp;
+        public ModConfigSpec.DoubleValue turnRate;
+        public ModConfigSpec.DoubleValue navGain;
         
         public int getFuelTicks() { return fuelTicks != null ? fuelTicks.get() : 120; }
         public double getThrust() { return thrust != null ? thrust.get() : 0.15; }

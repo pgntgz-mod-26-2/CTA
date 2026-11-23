@@ -2,26 +2,21 @@ package com.cta.client.debug;
 
 import com.cta.CTA;
 import com.cta.command.CTADebugCommand;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.*;
+import net.createmod.catnip.api.client.outliner.Outliner;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RenderLevelStageEvent;
-import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import org.joml.Matrix4f;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import net.minecraftforge.api.distmarker.OnlyIn;
-
 @OnlyIn(Dist.CLIENT)
-@Mod.EventBusSubscriber(modid = CTA.MODID, value = Dist.CLIENT)
+@EventBusSubscriber(modid = CTA.MODID, value = Dist.CLIENT)
 public class MissileDebugRenderer {
     
     private static final List<FlightPath> flightPaths = new CopyOnWriteArrayList<>();
@@ -74,88 +69,53 @@ public class MissileDebugRenderer {
     }
     
     @SubscribeEvent
-    public static void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) return;
+    public static void onClientTick(ClientTickEvent.Post event) {
         if (!CTADebugCommand.isDebugEnabled()) return;
         
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
         
         updateTimers();
+        renderOutlines();
     }
-    
-    @SubscribeEvent
-    public static void onRenderLevel(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) return;
-        if (!CTADebugCommand.isDebugEnabled()) return;
-        
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) return;
-        
-        if (flightPaths.isEmpty() && explosions.isEmpty() && penetrations.isEmpty() && fragments.isEmpty()) {
-            return;
+
+    private static void renderOutlines() {
+        Outliner outliner = Outliner.getInstance();
+
+        for (FlightPath path : flightPaths) {
+            List<Vec3> points = path.points;
+            for (int i = 0; i < points.size() - 1; i++) {
+                outliner.showLine("cta_dbg_fp_" + path.entityId + "_" + i, points.get(i), points.get(i + 1))
+                        .colored(path.color.rgb())
+                        .lineWidth(1 / 16f);
+            }
         }
-        
-        Vec3 cameraPos = event.getCamera().getPosition();
-        PoseStack poseStack = event.getPoseStack();
-        
-        poseStack.pushPose();
-        poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
-        
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        RenderSystem.disableDepthTest();
-        RenderSystem.lineWidth(2.0f);
-        RenderSystem.setShader(GameRenderer::getPositionColorShader);
-        
-        Matrix4f matrix = poseStack.last().pose();
-        Tesselator tesselator = Tesselator.getInstance();
-        BufferBuilder buffer = tesselator.getBuilder();
-        
-        try {
-            buffer.begin(VertexFormat.Mode.DEBUG_LINES, DefaultVertexFormat.POSITION_COLOR);
-            
-            for (FlightPath path : flightPaths) {
-                List<Vec3> points = path.points;
-                for (int i = 0; i < points.size() - 1; i++) {
-                    Vec3 p1 = points.get(i);
-                    Vec3 p2 = points.get(i + 1);
-                    drawLine(buffer, matrix, p1, p2, path.color);
-                }
-            }
-            
-            for (ExplosionDebug explosion : explosions) {
-                drawSphereWireframe(buffer, matrix, explosion.center, explosion.radius, explosion.color);
-            }
-            
-            for (PenetrationDebug pen : penetrations) {
-                DebugColor color = pen.succeeded ? DebugColor.ORANGE : DebugColor.DARK_RED;
-                drawLine(buffer, matrix, pen.start, pen.end, color);
-                if (!pen.succeeded) {
-                    drawX(buffer, matrix, pen.end, 0.3, DebugColor.DARK_RED);
-                }
-            }
-            
-            for (FragmentDebug frag : fragments) {
-                Vec3 end = frag.origin.add(frag.direction.scale(frag.range));
-                DebugColor color = frag.hitEntity ? DebugColor.RED : DebugColor.YELLOW;
-                drawLine(buffer, matrix, frag.origin, end, color);
-            }
-            
-            tesselator.end();
-        } catch (Exception e) {
-            try {
-                tesselator.end();
-            } catch (Exception ignored) {}
+
+        int expIdx = 0;
+        for (ExplosionDebug explosion : explosions) {
+            drawSphereWireframe(outliner, "cta_dbg_exp_" + (expIdx++), explosion.center, explosion.radius, explosion.color);
         }
-        
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
-        RenderSystem.lineWidth(1.0f);
-        
-        poseStack.popPose();
+
+        int penIdx = 0;
+        for (PenetrationDebug pen : penetrations) {
+            DebugColor color = pen.succeeded ? DebugColor.ORANGE : DebugColor.DARK_RED;
+            String keyPrefix = "cta_dbg_pen_" + (penIdx++);
+            outliner.showLine(keyPrefix + "_line", pen.start, pen.end)
+                    .colored(color.rgb())
+                    .lineWidth(1 / 16f);
+            if (!pen.succeeded) {
+                drawX(outliner, keyPrefix + "_x", pen.end, 0.3, DebugColor.DARK_RED);
+            }
+        }
+
+        int fragIdx = 0;
+        for (FragmentDebug frag : fragments) {
+            Vec3 end = frag.origin.add(frag.direction.scale(frag.range));
+            DebugColor color = frag.hitEntity ? DebugColor.RED : DebugColor.YELLOW;
+            outliner.showLine("cta_dbg_frag_" + (fragIdx++), frag.origin, end)
+                    .colored(color.rgb())
+                    .lineWidth(1 / 16f);
+        }
     }
     
     private static void updateTimers() {
@@ -175,23 +135,19 @@ public class MissileDebugRenderer {
         });
     }
     
-    private static void drawLine(BufferBuilder buffer, Matrix4f matrix, Vec3 p1, Vec3 p2, DebugColor color) {
-        buffer.vertex(matrix, (float) p1.x, (float) p1.y, (float) p1.z)
-              .color(color.r, color.g, color.b, color.a).endVertex();
-        buffer.vertex(matrix, (float) p2.x, (float) p2.y, (float) p2.z)
-              .color(color.r, color.g, color.b, color.a).endVertex();
+    private static void drawX(Outliner outliner, String keyPrefix, Vec3 center, double size, DebugColor color) {
+        outliner.showLine(keyPrefix + "_0", center.add(-size, 0, -size), center.add(size, 0, size))
+                .colored(color.rgb())
+                .lineWidth(1 / 16f);
+        outliner.showLine(keyPrefix + "_1", center.add(size, 0, -size), center.add(-size, 0, size))
+                .colored(color.rgb())
+                .lineWidth(1 / 16f);
+        outliner.showLine(keyPrefix + "_2", center.add(0, -size, -size), center.add(0, size, size))
+                .colored(color.rgb())
+                .lineWidth(1 / 16f);
     }
     
-    private static void drawX(BufferBuilder buffer, Matrix4f matrix, Vec3 center, double size, DebugColor color) {
-        drawLine(buffer, matrix, 
-            center.add(-size, 0, -size), center.add(size, 0, size), color);
-        drawLine(buffer, matrix, 
-            center.add(size, 0, -size), center.add(-size, 0, size), color);
-        drawLine(buffer, matrix, 
-            center.add(0, -size, -size), center.add(0, size, size), color);
-    }
-    
-    private static void drawSphereWireframe(BufferBuilder buffer, Matrix4f matrix, Vec3 center, float radius, DebugColor color) {
+    private static void drawSphereWireframe(Outliner outliner, String keyPrefix, Vec3 center, float radius, DebugColor color) {
         int segments = 16;
         
         for (int i = 0; i < segments; i++) {
@@ -200,15 +156,15 @@ public class MissileDebugRenderer {
             
             Vec3 p1 = center.add(Math.cos(angle1) * radius, 0, Math.sin(angle1) * radius);
             Vec3 p2 = center.add(Math.cos(angle2) * radius, 0, Math.sin(angle2) * radius);
-            drawLine(buffer, matrix, p1, p2, color);
+            outliner.showLine(keyPrefix + "_xz_" + i, p1, p2).colored(color.rgb()).lineWidth(1 / 16f);
             
             p1 = center.add(Math.cos(angle1) * radius, Math.sin(angle1) * radius, 0);
             p2 = center.add(Math.cos(angle2) * radius, Math.sin(angle2) * radius, 0);
-            drawLine(buffer, matrix, p1, p2, color);
+            outliner.showLine(keyPrefix + "_xy_" + i, p1, p2).colored(color.rgb()).lineWidth(1 / 16f);
             
             p1 = center.add(0, Math.cos(angle1) * radius, Math.sin(angle1) * radius);
             p2 = center.add(0, Math.cos(angle2) * radius, Math.sin(angle2) * radius);
-            drawLine(buffer, matrix, p1, p2, color);
+            outliner.showLine(keyPrefix + "_yz_" + i, p1, p2).colored(color.rgb()).lineWidth(1 / 16f);
         }
     }
     
@@ -229,6 +185,10 @@ public class MissileDebugRenderer {
             this.g = g;
             this.b = b;
             this.a = a;
+        }
+
+        int rgb() {
+            return (a << 24) | (r << 16) | (g << 8) | b;
         }
     }
     

@@ -2,17 +2,19 @@ package com.cta.compat;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 import net.minecraft.world.phys.HitResult;
-import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Field;
@@ -74,7 +76,7 @@ public class CBCCompat {
             return FUZE_UNKNOWN;
         }
         
-        ResourceLocation id = ForgeRegistries.ITEMS.getKey(stack.getItem());
+        Identifier id = BuiltInRegistries.ITEM.getKey(stack.getItem());
         if (id == null) return FUZE_UNKNOWN;
         
         String name = id.getPath().toLowerCase();
@@ -98,32 +100,38 @@ public class CBCCompat {
         return FUZE_IMPACT;
     }
     
+    @Nullable
+    private static CompoundTag getItemTag(ItemStack stack) {
+        CustomData customData = stack.get(DataComponents.CUSTOM_DATA);
+        return customData != null ? customData.copyTag() : null;
+    }
+
     public static int getTimedFuzeDuration(ItemStack stack) {
         if (stack.isEmpty()) return 100;
         
-        CompoundTag tag = stack.getTag();
+        CompoundTag tag = getItemTag(stack);
         if (tag != null) {
-            if (tag.contains("BlockEntityTag", 10)) {
-                CompoundTag beTag = tag.getCompound("BlockEntityTag");
+            if (tag.contains("BlockEntityTag")) {
+                CompoundTag beTag = tag.getCompoundOrEmpty("BlockEntityTag");
                 if (beTag.contains("FuseTime")) {
-                    return beTag.getInt("FuseTime") * 20;
+                    return beTag.getIntOr("FuseTime", 5) * 20;
                 }
                 if (beTag.contains("Timer")) {
-                    return beTag.getInt("Timer");
+                    return beTag.getIntOr("Timer", 100);
                 }
             }
             
             if (tag.contains("FuzeTimer")) {
-                return tag.getInt("FuzeTimer");
+                return tag.getIntOr("FuzeTimer", 100);
             }
             if (tag.contains("FuseTime")) {
-                return tag.getInt("FuseTime") * 20; 
+                return tag.getIntOr("FuseTime", 5) * 20; 
             }
             if (tag.contains("Timer")) {
-                return tag.getInt("Timer");
+                return tag.getIntOr("Timer", 100);
             }
             if (tag.contains("fuze_timer")) {
-                return tag.getInt("fuze_timer");
+                return tag.getIntOr("fuze_timer", 100);
             }
         }
         
@@ -133,16 +141,16 @@ public class CBCCompat {
     public static double getProximityRange(ItemStack stack) {
         if (stack.isEmpty()) return 5.0;
         
-        CompoundTag tag = stack.getTag();
+        CompoundTag tag = getItemTag(stack);
         if (tag != null) {
             if (tag.contains("ProximityRange")) {
-                return tag.getDouble("ProximityRange");
+                return tag.getDoubleOr("ProximityRange", 5.0);
             }
             if (tag.contains("Range")) {
-                return tag.getDouble("Range");
+                return tag.getDoubleOr("Range", 5.0);
             }
             if (tag.contains("DetectionRange")) {
-                return tag.getDouble("DetectionRange");
+                return tag.getDoubleOr("DetectionRange", 5.0);
             }
         }
         
@@ -152,16 +160,16 @@ public class CBCCompat {
     public static int getDelayDuration(ItemStack stack) {
         if (stack.isEmpty()) return 10;
         
-        CompoundTag tag = stack.getTag();
+        CompoundTag tag = getItemTag(stack);
         if (tag != null) {
             if (tag.contains("DelayTimer")) {
-                return tag.getInt("DelayTimer");
+                return tag.getIntOr("DelayTimer", 10);
             }
             if (tag.contains("Delay")) {
-                return tag.getInt("Delay");
+                return tag.getIntOr("Delay", 10);
             }
             if (tag.contains("DetonationDelay")) {
-                return tag.getInt("DetonationDelay");
+                return tag.getIntOr("DetonationDelay", 10);
             }
         }
         
@@ -527,7 +535,7 @@ public class CBCCompat {
 
     @Nullable
     private static Object selectProjectileHandler(Block block) {
-        ResourceLocation id = ForgeRegistries.BLOCKS.getKey(block);
+        Identifier id = BuiltInRegistries.BLOCK.getKey(block);
         String key = id != null ? id.getPath() : block.getClass().getName();
         key = key.toLowerCase();
 

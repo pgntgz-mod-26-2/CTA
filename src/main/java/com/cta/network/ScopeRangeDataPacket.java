@@ -1,13 +1,17 @@
 package com.cta.network;
 
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.network.NetworkEvent;
+import com.cta.CTA;
+import com.cta.client.ClientPacketHandler;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import java.util.function.Supplier;
+public class ScopeRangeDataPacket implements CustomPacketPayload {
+    public static final Type<ScopeRangeDataPacket> TYPE = new Type<>(CTA.id("scope_range_data"));
+    public static final StreamCodec<RegistryFriendlyByteBuf, ScopeRangeDataPacket> STREAM_CODEC =
+            StreamCodec.of(ScopeRangeDataPacket::write, ScopeRangeDataPacket::read);
 
-public class ScopeRangeDataPacket {
     public final boolean hasCannon;
     public final String shellName;
     public final double currentRange;
@@ -16,7 +20,7 @@ public class ScopeRangeDataPacket {
     public final double[] ranges;
 
     public ScopeRangeDataPacket(boolean hasCannon, String shellName, double currentRange,
-                                 int loadedCharges, int[] levels, double[] ranges) {
+                                int loadedCharges, int[] levels, double[] ranges) {
         this.hasCannon = hasCannon;
         this.shellName = shellName;
         this.currentRange = currentRange;
@@ -25,7 +29,7 @@ public class ScopeRangeDataPacket {
         this.ranges = ranges;
     }
 
-    public static void encode(ScopeRangeDataPacket msg, FriendlyByteBuf buf) {
+    private static void write(RegistryFriendlyByteBuf buf, ScopeRangeDataPacket msg) {
         buf.writeBoolean(msg.hasCannon);
         buf.writeUtf(msg.shellName);
         buf.writeDouble(msg.currentRange);
@@ -37,7 +41,7 @@ public class ScopeRangeDataPacket {
         }
     }
 
-    public static ScopeRangeDataPacket decode(FriendlyByteBuf buf) {
+    private static ScopeRangeDataPacket read(RegistryFriendlyByteBuf buf) {
         boolean hasCannon = buf.readBoolean();
         String shellName = buf.readUtf();
         double currentRange = buf.readDouble();
@@ -52,10 +56,12 @@ public class ScopeRangeDataPacket {
         return new ScopeRangeDataPacket(hasCannon, shellName, currentRange, loadedCharges, levels, ranges);
     }
 
-    public static void handle(ScopeRangeDataPacket msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() ->
-            DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> com.cta.client.ClientPacketHandler.handleScopeRangeDataPacket(msg))
-        );
-        ctx.get().setPacketHandled(true);
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
+    }
+
+    public static void handle(ScopeRangeDataPacket msg, IPayloadContext context) {
+        context.enqueueWork(() -> ClientPacketHandler.handleScopeRangeDataPacket(msg));
     }
 }

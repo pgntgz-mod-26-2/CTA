@@ -8,14 +8,19 @@ import com.cta.network.StartScopeViewPacket;
 import com.cta.registry.ModBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.network.PacketDistributor;
 
 import javax.annotation.Nullable;
 import java.lang.ref.WeakReference;
@@ -106,23 +111,19 @@ public class ScopeBlockEntity extends BlockEntity {
         this.currentViewer = new WeakReference<>(player);
         this.beingViewed = true;
         setChanged();
-        PacketHandler.INSTANCE.send(
-                PacketDistributor.PLAYER.with(() -> player),
-            new StartScopeViewPacket(this.worldPosition));
+        PacketHandler.sendToPlayer(player, new StartScopeViewPacket(this.worldPosition));
         sendRangeDataTo(player);
     }
 
     private void sendRangeDataTo(ServerPlayer player) {
         if (boundCannonMount == null) {
-            PacketHandler.INSTANCE.send(
-                    PacketDistributor.PLAYER.with(() -> player),
+            PacketHandler.sendToPlayer(player,
                     new ScopeRangeDataPacket(false, "", -1, 0, new int[0], new double[0]));
             return;
         }
         CBCCompat.CannonRangeData data = CBCCompat.getCannonRangeData(level, boundCannonMount);
         if (data == null) {
-            PacketHandler.INSTANCE.send(
-                    PacketDistributor.PLAYER.with(() -> player),
+            PacketHandler.sendToPlayer(player,
                     new ScopeRangeDataPacket(true, "?", -1, 0, new int[0], new double[0]));
             return;
         }
@@ -133,8 +134,7 @@ public class ScopeBlockEntity extends BlockEntity {
             lvls[i] = samples.get(i).chargeLevel();
             rngs[i] = samples.get(i).range();
         }
-        PacketHandler.INSTANCE.send(
-                PacketDistributor.PLAYER.with(() -> player),
+        PacketHandler.sendToPlayer(player,
                 new ScopeRangeDataPacket(true, data.shellName(), data.currentRange(),
                         data.loadedChargeLevels(), lvls, rngs));
     }
@@ -152,14 +152,19 @@ public class ScopeBlockEntity extends BlockEntity {
         }
     }
 
+    @Override
+    public void preRemoveSideEffects(BlockPos pos, BlockState state) {
+        super.preRemoveSideEffects(pos, state);
+        onRemoved();
+    }
+
     private void sync() {
         setChanged();
-        if (level != null && !level.isClientSide) {
+        if (level != null && !level.isClientSide()) {
             BlockState state = getBlockState();
             level.sendBlockUpdated(worldPosition, state, state, Block.UPDATE_CLIENTS);
         }
     }
-
 
     @Nullable
     public BlockPos findNearbyCannonMount(int radius) {
@@ -184,7 +189,6 @@ public class ScopeBlockEntity extends BlockEntity {
         }
         return closest;
     }
-
 
     public static void serverTick(Level level, BlockPos pos, BlockState state, ScopeBlockEntity be) {
         if (be.boundCannonMount != null && CBCCompat.isCBCLoaded()) {
@@ -214,10 +218,8 @@ public class ScopeBlockEntity extends BlockEntity {
 
         ServerPlayer viewer = be.currentViewer.get();
         if (viewer != null) {
-            // FIX: Convert the block's Ship Space position into actual World Space 
-            // so the distance check passes properly when mounted on a moving Valkyrien Skies ship.
             Vec3 worldPos = VSCompat.toWorldCoordinatesRobust(level, pos);
-            
+
             if (viewer.isDeadOrDying() || viewer.level() != level ||
                     viewer.distanceToSqr(worldPos) > 128 * 128) {
                 be.stopViewing(viewer);
@@ -228,48 +230,36 @@ public class ScopeBlockEntity extends BlockEntity {
         }
     }
 
-
     @Override
-    protected void saveAdditional(CompoundTag tag) {
-        super.saveAdditional(tag);
-        tag.putFloat("ScopeYaw", scopeYaw);
-        tag.putFloat("ScopePitch", scopePitch);
+    protected void saveAdditional(ValueOutput output) {
+        super.saveAdditional(output);
+        output.putFloat("ScopeYaw", scopeYaw);
+        output.putFloat("ScopePitch", scopePitch);
         if (boundCannonMount != null) {
-            tag.putInt("BoundCannonX", boundCannonMount.getX());
-            tag.putInt("BoundCannonY", boundCannonMount.getY());
-            tag.putInt("BoundCannonZ", boundCannonMount.getZ());
+            output.putInt("BoundCannonX", boundCannonMount.getX());
+            output.putInt("BoundCannonY", boundCannonMount.getY());
+            output.putInt("BoundCannonZ", boundCannonMount.getZ());
         }
     }
 
     @Override
-    public void load(CompoundTag tag) {
-        super.load(tag);
-        this.scopeYaw = tag.getFloat("ScopeYaw");
-        this.scopePitch = tag.getFloat("ScopePitch");
-        if (tag.contains("BoundCannonX")) {
-            this.boundCannonMount = new BlockPos(
-                    tag.getInt("BoundCannonX"), tag.getInt("BoundCannonY"), tag.getInt("BoundCannonZ"));
-        }
+    protected void loadAdditional(ValueInput input) {
+        super.loadAdditional(input);
+        this.scopeYaw = input.getFloatOr("ScopeYaw", 0.0f);
+        this.scopePitch = input.getFloatOr("ScopePitch", 0.0f);
+        input.getInt("BoundCannonX").ifPresent(bx -> this.boundCannonMount = new BlockPos(
+                bx,
+                input.getIntOr("BoundCannonY", 0),
+                input.getIntOr("BoundCannonZ", 0)));
     }
 
     @Override
-    public CompoundTag getUpdateTag() {
-        CompoundTag tag = super.getUpdateTag();
-        saveAdditional(tag);
-        return tag;
+    public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+        return saveWithoutMetadata(registries);
     }
 
     @Override
-    public net.minecraft.network.protocol.Packet<net.minecraft.network.protocol.game.ClientGamePacketListener> getUpdatePacket() {
-        return net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket.create(this);
-    }
-
-    @Override
-    public void onDataPacket(net.minecraft.network.Connection net,
-            net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket pkt) {
-        CompoundTag tag = pkt.getTag();
-        if (tag != null) {
-            load(tag);
-        }
+    public Packet<ClientGamePacketListener> getUpdatePacket() {
+        return ClientboundBlockEntityDataPacket.create(this);
     }
 }

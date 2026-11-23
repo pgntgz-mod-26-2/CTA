@@ -36,9 +36,9 @@ public class FragMissileEntity extends MissileEntity {
     
     @Override
     protected void detonate(Vec3 pos) {
-        if (!this.level().isClientSide && !hasDetonated) {
+        if (!this.level().isClientSide() && !hasDetonated) {
             hasDetonated = true;
-            releaseChunkLoadInternal();
+            releaseChunkLoad();
             
             this.level().explode(null, pos.x, pos.y, pos.z, 
                     explosionPower, Level.ExplosionInteraction.TNT);
@@ -124,29 +124,18 @@ public class FragMissileEntity extends MissileEntity {
             Vec3 checkPos = from.add(direction.scale(d));
             BlockPos blockPos = BlockPos.containing(checkPos);
             
-            if (this.level().getBlockState(blockPos).isSolidRender(this.level(), blockPos)) {
+            if (this.level().getBlockState(blockPos).isSolidRender()) {
                 return false;
             }
         }
         return true;
     }
     
-    private void releaseChunkLoadInternal() {
-        if (!this.level().isClientSide && this.level() instanceof ServerLevel serverLevel) {
-            if (super.lastForcedChunk != null) {
-                net.minecraftforge.common.world.ForgeChunkManager.forceChunk(
-                        serverLevel, "cta", this.blockPosition(), 
-                        super.lastForcedChunk.x, super.lastForcedChunk.z, false, false);
-                super.lastForcedChunk = null;
-            }
-        }
-    }
-    
     @Override
     public void tick() {
         super.tick();
         
-        if (this.level().isClientSide && isDeployed() && fuel > 0) {
+        if (this.level().isClientSide() && isDeployed() && fuel > 0) {
             Vec3 pos = this.position();
             this.level().addParticle(ParticleTypes.SMOKE,
                     pos.x, pos.y, pos.z,

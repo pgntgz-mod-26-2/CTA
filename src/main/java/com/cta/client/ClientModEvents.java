@@ -5,19 +5,18 @@ import com.cta.registry.ModEntities;
 import com.cta.client.renderer.MissileRenderer;
 import com.cta.client.renderer.ScopeRenderer;
 import com.cta.client.renderer.FragmentRenderer;
-import net.minecraft.client.renderer.entity.EntityRenderers;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 
-@Mod.EventBusSubscriber(modid = CTA.MODID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = CTA.MODID, value = Dist.CLIENT)
 public class ClientModEvents {
     @SubscribeEvent
-    public static void onClientSetup(FMLClientSetupEvent event) {
-        EntityRenderers.register(ModEntities.MISSILE.get(), MissileRenderer::new);
-        EntityRenderers.register(ModEntities.SCOPE.get(), ScopeRenderer::new);
-        EntityRenderers.register(ModEntities.THERMAL_SCOPE.get(), ScopeRenderer::new);
-        EntityRenderers.register(ModEntities.FRAGMENT.get(), FragmentRenderer::new);
+    public static void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
+        event.registerEntityRenderer(ModEntities.MISSILE.get(), MissileRenderer::new);
+        event.registerEntityRenderer(ModEntities.SCOPE.get(), ScopeRenderer::new);
+        event.registerEntityRenderer(ModEntities.THERMAL_SCOPE.get(), ScopeRenderer::new);
+        event.registerEntityRenderer(ModEntities.FRAGMENT.get(), FragmentRenderer::new);
     }
 }

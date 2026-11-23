@@ -13,8 +13,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(MouseHandler.class)
 public class MouseHandlerMixin {
     
-    @Inject(method = "turnPlayer", at = @At("HEAD"), cancellable = true)
-    private void cta$lockViewInScope(CallbackInfo ci) {
+    @Inject(method = "turnPlayer(D)V", at = @At("HEAD"), cancellable = true)
+    private void cta$lockViewInScope(double timeaccum, CallbackInfo ci) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
         

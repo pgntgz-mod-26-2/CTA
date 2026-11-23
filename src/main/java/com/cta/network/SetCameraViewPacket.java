@@ -1,12 +1,21 @@
 package com.cta.network;
 
-import net.minecraft.network.FriendlyByteBuf;
+import com.cta.CTA;
+import com.cta.client.ClientPacketHandler;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.world.entity.Entity;
-import net.minecraftforge.network.NetworkEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import java.util.function.Supplier;
+public class SetCameraViewPacket implements CustomPacketPayload {
+    public static final Type<SetCameraViewPacket> TYPE = new Type<>(CTA.id("set_camera_view"));
+    public static final StreamCodec<RegistryFriendlyByteBuf, SetCameraViewPacket> STREAM_CODEC = StreamCodec.composite(
+            ByteBufCodecs.INT, p -> p.entityId,
+            SetCameraViewPacket::new
+    );
 
-public class SetCameraViewPacket {
     public final int entityId;
 
     public SetCameraViewPacket(Entity entity) {
@@ -17,18 +26,12 @@ public class SetCameraViewPacket {
         this.entityId = entityId;
     }
 
-    public static void encode(SetCameraViewPacket msg, FriendlyByteBuf buf) {
-        buf.writeInt(msg.entityId);
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
-    public static SetCameraViewPacket decode(FriendlyByteBuf buf) {
-        return new SetCameraViewPacket(buf.readInt());
-    }
-
-    public static void handle(SetCameraViewPacket msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT, () -> () -> com.cta.client.ClientPacketHandler.handleSetCameraViewPacket(msg));
-        });
-        ctx.get().setPacketHandled(true);
+    public static void handle(SetCameraViewPacket msg, IPayloadContext context) {
+        context.enqueueWork(() -> ClientPacketHandler.handleSetCameraViewPacket(msg));
     }
 }

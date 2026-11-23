@@ -12,8 +12,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 
 import javax.annotation.Nullable;
 
@@ -54,7 +54,7 @@ public class ScopeViewManager {
             return;
         Minecraft mc = Minecraft.getInstance();
         mc.options.setCameraType(storedCameraType);
-        PacketHandler.INSTANCE.sendToServer(new StopViewingPacket(viewedScopePos));
+        PacketHandler.sendToServer(new StopViewingPacket(viewedScopePos));
         viewedScopePos = null;
         isViewing = false;
         clearRangeData();
@@ -175,7 +175,7 @@ public class ScopeViewManager {
 
     private static boolean isAirOrTransparent(Level level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
-        return state.isAir() || !state.canOcclude() || state.getBlock().propagatesSkylightDown(state, level, pos);
+        return state.isAir() || !state.canOcclude() || state.propagatesSkylightDown();
     }
 
     public static void tick() {

@@ -58,7 +58,7 @@ public class MinecraftMixin {
         }
     }
     
-    @Inject(method = "pickBlock", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "pickBlockOrEntity", at = @At("HEAD"), cancellable = true)
     private void cta$blockPickInScope(CallbackInfo ci) {
         if (ScopeViewManager.isViewingScope()) {
             ci.cancel();
@@ -72,7 +72,7 @@ public class MinecraftMixin {
         }
     }
     
-    @Inject(method = "setScreen", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "setScreenAndShow", at = @At("HEAD"), cancellable = true)
     private void cta$blockScreenInScope(@Nullable Screen screen, CallbackInfo ci) {
 
         if (screen == null) return;

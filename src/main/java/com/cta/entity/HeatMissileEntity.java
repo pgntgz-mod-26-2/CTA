@@ -38,7 +38,7 @@ public class HeatMissileEntity extends MissileEntity {
     
     @Override
     protected void detonate(Vec3 pos) {
-        if (!this.level().isClientSide && !hasDetonated) {
+        if (!this.level().isClientSide() && !hasDetonated) {
             if (penetrationDirection == null) {
                 Vec3 motion = this.getDeltaMovement();
                 if (motion.lengthSqr() > 0.0001) {
@@ -114,12 +114,12 @@ public class HeatMissileEntity extends MissileEntity {
     private void finalDetonation(Vec3 pos, boolean penetratedArmor) {
         if (!hasDetonated) {
             hasDetonated = true;
-            releaseChunkLoadInternal();
+            releaseChunkLoad();
             this.discard();
             
             if (this.level() instanceof ServerLevel serverLevel) {
                 serverLevel.playSound(null, BlockPos.containing(pos), 
-                        SoundEvents.GENERIC_EXPLODE, SoundSource.BLOCKS, 1.0f, 1.5f);
+                        SoundEvents.GENERIC_EXPLODE.value(), SoundSource.BLOCKS, 1.0f, 1.5f);
                 
                 if (penetratedArmor) {
                     for (int i = 0; i < 15; i++) {
@@ -182,22 +182,11 @@ public class HeatMissileEntity extends MissileEntity {
         }
     }
     
-    private void releaseChunkLoadInternal() {
-        if (!this.level().isClientSide && this.level() instanceof ServerLevel serverLevel) {
-            if (super.lastForcedChunk != null) {
-                net.minecraftforge.common.world.ForgeChunkManager.forceChunk(
-                        serverLevel, "cta", this.blockPosition(), 
-                        super.lastForcedChunk.x, super.lastForcedChunk.z, false, false);
-                super.lastForcedChunk = null;
-            }
-        }
-    }
-    
     @Override
     public void tick() {
         super.tick();
         
-        if (this.level().isClientSide && isDeployed() && fuel > 0) {
+        if (this.level().isClientSide() && isDeployed() && fuel > 0) {
             Vec3 pos = this.position();
             this.level().addParticle(ParticleTypes.FLAME,
                     pos.x, pos.y, pos.z,

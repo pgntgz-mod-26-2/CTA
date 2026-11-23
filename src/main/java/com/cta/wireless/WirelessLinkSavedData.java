@@ -1,27 +1,32 @@
 package com.cta.wireless;
 
+import com.cta.CTA;
+import com.mojang.serialization.Codec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
 
 import java.util.*;
 
 public class WirelessLinkSavedData extends SavedData {
 
-    private static final String DATA_NAME = "cta_wireless_links";
+    public static final Codec<WirelessLinkSavedData> CODEC =
+            CompoundTag.CODEC.xmap(WirelessLinkSavedData::load, WirelessLinkSavedData::saveToTag);
+
+    public static final SavedDataType<WirelessLinkSavedData> TYPE = new SavedDataType<>(
+            CTA.id("wireless_links"),
+            WirelessLinkSavedData::new,
+            CODEC
+    );
 
     private final Map<BlockPos, Map<String, Set<BlockPos>>> links = new HashMap<>();
 
     public WirelessLinkSavedData() {}
 
     public static WirelessLinkSavedData get(ServerLevel level) {
-        return level.getDataStorage().computeIfAbsent(
-                WirelessLinkSavedData::load, WirelessLinkSavedData::new,
-                DATA_NAME
-        );
+        return level.getDataStorage().computeIfAbsent(TYPE);
     }
 
     public void addLink(BlockPos target, String channel, BlockPos peripheral) {
@@ -89,13 +94,13 @@ public class WirelessLinkSavedData extends SavedData {
 
     public static WirelessLinkSavedData load(CompoundTag tag) {
         WirelessLinkSavedData data = new WirelessLinkSavedData();
-        CompoundTag linksTag = tag.getCompound("Links");
-        for (String targetKey : linksTag.getAllKeys()) {
+        CompoundTag linksTag = tag.getCompoundOrEmpty("Links");
+        for (String targetKey : linksTag.keySet()) {
             BlockPos target = BlockPos.of(Long.parseLong(targetKey));
-            CompoundTag channelsTag = linksTag.getCompound(targetKey);
+            CompoundTag channelsTag = linksTag.getCompoundOrEmpty(targetKey);
             Map<String, Set<BlockPos>> channelMap = new HashMap<>();
-            for (String channel : channelsTag.getAllKeys()) {
-                long[] positions = channelsTag.getLongArray(channel);
+            for (String channel : channelsTag.keySet()) {
+                long[] positions = channelsTag.getLongArray(channel).orElse(new long[0]);
                 Set<BlockPos> posSet = new LinkedHashSet<>();
                 for (long pos : positions) {
                     posSet.add(BlockPos.of(pos));
@@ -107,8 +112,8 @@ public class WirelessLinkSavedData extends SavedData {
         return data;
     }
 
-    @Override
-    public CompoundTag save(CompoundTag tag) {
+    public CompoundTag saveToTag() {
+        CompoundTag tag = new CompoundTag();
         CompoundTag linksTag = new CompoundTag();
         for (var entry : links.entrySet()) {
             CompoundTag channelsTag = new CompoundTag();

@@ -1,32 +1,32 @@
 package com.cta.network;
 
+import com.cta.CTA;
+import com.cta.client.ClientPacketHandler;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import java.util.function.Supplier;
+public class StartScopeViewPacket implements CustomPacketPayload {
+    public static final Type<StartScopeViewPacket> TYPE = new Type<>(CTA.id("start_scope_view"));
+    public static final StreamCodec<RegistryFriendlyByteBuf, StartScopeViewPacket> STREAM_CODEC = StreamCodec.composite(
+            BlockPos.STREAM_CODEC, p -> p.scopePos,
+            StartScopeViewPacket::new
+    );
 
-public class StartScopeViewPacket {
     public final BlockPos scopePos;
 
     public StartScopeViewPacket(BlockPos scopePos) {
         this.scopePos = scopePos;
     }
 
-    public static void encode(StartScopeViewPacket msg, FriendlyByteBuf buf) {
-        buf.writeBlockPos(msg.scopePos);
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
-    public static StartScopeViewPacket decode(FriendlyByteBuf buf) {
-        return new StartScopeViewPacket(buf.readBlockPos());
-    }
-
-    public static void handle(StartScopeViewPacket msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> com.cta.client.ClientPacketHandler.handleStartScopeViewPacket(msg));
-        });
-        ctx.get().setPacketHandled(true);
+    public static void handle(StartScopeViewPacket msg, IPayloadContext context) {
+        context.enqueueWork(() -> ClientPacketHandler.handleStartScopeViewPacket(msg));
     }
 }

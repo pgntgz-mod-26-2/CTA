@@ -9,6 +9,7 @@ import javax.annotation.Nullable;
 
 import com.Tribulla.thermodynamica.api.HeatAPI;
 import com.Tribulla.thermodynamica.api.targeting.HeatTargeting;
+import com.cta.CTA;
 import com.cta.client.debug.MissileDebugRenderer;
 import com.cta.client.debug.MissileDebugRenderer.DebugColor;
 import com.cta.command.CTADebugCommand;
@@ -22,14 +23,13 @@ import com.cta.config.MissileConfig.MissileTypeConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -47,15 +47,25 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.common.world.ForgeChunkManager;
-import net.minecraftforge.entity.IEntityAdditionalSpawnData;
-import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.network.NetworkHooks;
+import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.neoforge.common.world.chunk.RegisterTicketControllersEvent;
+import net.neoforged.neoforge.common.world.chunk.TicketController;
+import net.neoforged.neoforge.entity.IEntityWithComplexSpawn;
 
-public class MissileEntity extends Entity implements IEntityAdditionalSpawnData {
+public class MissileEntity extends Entity implements IEntityWithComplexSpawn {
+
+    @Nullable
+    private static TicketController chunkController;
+
+    public static void registerTicketController(RegisterTicketControllersEvent event) {
+        TicketController created = new TicketController(CTA.id("missile_chunks"));
+        event.register(created);
+        chunkController = created;
+    }
     
     public enum WarheadType {
         HE,
@@ -153,15 +163,15 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
     }
 
     @Override
-    protected void defineSynchedData() {
-        this.entityData.define(DATA_HEALTH, 10.0f);
-        this.entityData.define(DATA_DEPLOYED, false);
-        this.entityData.define(DATA_YAW, 0.0f);
-        this.entityData.define(DATA_PITCH, 0.0f);
-        this.entityData.define(DATA_ROLL, 0.0f);
-        this.entityData.define(DATA_MISSILE_ID, "");
-        this.entityData.define(DATA_WARHEAD_TYPE, 0);
-        this.entityData.define(DATA_ATTACHED_TO_SHIP, false);
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        builder.define(DATA_HEALTH, 10.0f);
+        builder.define(DATA_DEPLOYED, false);
+        builder.define(DATA_YAW, 0.0f);
+        builder.define(DATA_PITCH, 0.0f);
+        builder.define(DATA_ROLL, 0.0f);
+        builder.define(DATA_MISSILE_ID, "");
+        builder.define(DATA_WARHEAD_TYPE, 0);
+        builder.define(DATA_ATTACHED_TO_SHIP, false);
     }
     
     public void setMissileId(String id, WarheadType warhead) {
@@ -278,7 +288,7 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
     public void tick() {
         super.tick();
 
-        if (!this.level().isClientSide && !isDeployed()) {
+        if (!this.level().isClientSide() && !isDeployed()) {
             boolean powered = this.level().hasNeighborSignal(controllerDir == null ? blockPosition() : blockPosition().relative(controllerDir));
             if (powered && !lastPowered && !neighborLaunched) {
                 launch();
@@ -291,15 +301,16 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
         if (isDeployed()) {
             ticksSinceLaunch++;
             
-            if (!this.level().isClientSide && this.level() instanceof ServerLevel serverLevel) {
-                if (MissileConfig.ENABLE_CHUNK_LOADING.get()) {
-                    ChunkPos currentChunk = new ChunkPos(this.blockPosition());
+            if (!this.level().isClientSide() && this.level() instanceof ServerLevel serverLevel) {
+                if (MissileConfig.ENABLE_CHUNK_LOADING.get() && chunkController != null) {
+                    ChunkPos currentChunk = ChunkPos.containing(this.blockPosition());
                     if (lastForcedChunk == null || !lastForcedChunk.equals(currentChunk)) {
                         if (lastForcedChunk != null) {
-                            ForgeChunkManager.forceChunk(serverLevel, "cta", this.blockPosition(), lastForcedChunk.x, lastForcedChunk.z, false, true);
+                            chunkController.forceChunk(serverLevel, this.getUUID(), lastForcedChunk.x(), lastForcedChunk.z(), false, true);
                         }
-                        ForgeChunkManager.forceChunk(serverLevel, "cta", this.blockPosition(), currentChunk.x, currentChunk.z, true, true);
-                        lastForcedChunk = currentChunk;
+                        if (chunkController.forceChunk(serverLevel, this.getUUID(), currentChunk.x(), currentChunk.z(), true, true)) {
+                            lastForcedChunk = currentChunk;
+                        }
                     }
                 }
                 
@@ -310,20 +321,20 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
                 }
             }
             
-            if (this.level().isClientSide && CTADebugCommand.isDebugEnabled() && ticksSinceLaunch % 2 == 0) {
+            if (this.level().isClientSide() && CTADebugCommand.isDebugEnabled() && ticksSinceLaunch % 2 == 0) {
                 DebugColor color = switch (warheadType) {
                     case HEAT -> DebugColor.ORANGE;
                     case HEFRAG -> DebugColor.YELLOW;
                     default -> DebugColor.RED;
                 };
-                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+                if (FMLEnvironment.getDist().isClient()) {
                     MissileDebugRenderer.addFlightPoint(this.getId(), this.position(), color);
-                });
+                }
             }
             
             applyMissilePhysics();
             
-            if (!this.level().isClientSide && guidanceType != GuidanceType.NONE) {
+            if (!this.level().isClientSide() && guidanceType != GuidanceType.NONE) {
                 applyGuidance();
             }
             
@@ -349,7 +360,7 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
             
             spawnFlightParticles();
             
-            if (!this.level().isClientSide && ticksSinceLaunch > NOCLIP_TICKS) {
+            if (!this.level().isClientSide() && ticksSinceLaunch > NOCLIP_TICKS) {
                 if (hasImpacted && impactDelayTicks > 0) {
                     impactDelayTicks--;
                     if (impactDelayTicks <= 0) {
@@ -1059,7 +1070,7 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
     }
     
     protected void spawnFlightParticles() {
-        if (!this.level().isClientSide) return;
+        if (!this.level().isClientSide()) return;
         
         Vec3 pos = this.position();
         
@@ -1141,7 +1152,7 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
     }
 
     protected void detonate(Vec3 pos) {
-        if (!this.level().isClientSide && !hasDetonated) {
+        if (!this.level().isClientSide() && !hasDetonated) {
             hasDetonated = true;
             releaseChunkLoad();
 
@@ -1161,9 +1172,9 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
     }
 
     protected void performHeDetonation(Vec3 pos) {
-        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+        if (FMLEnvironment.getDist().isClient()) {
             MissileDebugRenderer.addExplosion(pos, explosionPower, DebugColor.RED);
-        });
+        }
 
         this.discard();
         this.level().explode(null, pos.x, pos.y, pos.z, explosionPower, Level.ExplosionInteraction.TNT);
@@ -1256,17 +1267,17 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
         
         boolean succeeded = passedThroughArmor && reachedAir;
         Vec3 finalJetEndPos = jetEndPos;
-        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+        if (FMLEnvironment.getDist().isClient()) {
             MissileDebugRenderer.addPenetrationPath(pos, finalJetEndPos, succeeded);
-        });
+        }
 
         this.discard();
         
         if (passedThroughArmor && reachedAir) {
             float behindArmorPower = Math.max(2.0f, baseExplosionPower * 0.5f);
-            DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+            if (FMLEnvironment.getDist().isClient()) {
                 MissileDebugRenderer.addExplosion(finalJetEndPos, behindArmorPower, DebugColor.ORANGE);
-            });
+            }
 
             this.level().explode(null, jetEndPos.x, jetEndPos.y, jetEndPos.z, 
                     behindArmorPower, Level.ExplosionInteraction.TNT);
@@ -1275,9 +1286,9 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
                 createSpallCone(serverLevel, jetEndPos, penetrationDirection);
             }
         } else if (!passedThroughArmor) {
-            DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+            if (FMLEnvironment.getDist().isClient()) {
                 MissileDebugRenderer.addExplosion(pos, Math.max(1.0f, baseExplosionPower * 0.2f), DebugColor.ORANGE);
-            });
+            }
             this.level().explode(null, pos.x, pos.y, pos.z,
                     Math.max(1.0f, baseExplosionPower * 0.2f), Level.ExplosionInteraction.TNT);
         }
@@ -1300,7 +1311,7 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
             double dot = direction.dot(toEntity.normalize());
             if (dot > 0.3 && distance < spallRange) {
                 float damage = (float) ((1.0 - distance / spallRange) * explosionPower * 4);
-                ((LivingEntity) entity).hurt(damageSource, damage);
+                ((LivingEntity) entity).hurtServer(level, damageSource, damage);
                 
                 level.sendParticles(ParticleTypes.CRIT,
                         center.x, center.y, center.z, 5,
@@ -1310,9 +1321,9 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
     }
     
     protected void performHefragDetonation(Vec3 pos) {
-        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+        if (FMLEnvironment.getDist().isClient()) {
             MissileDebugRenderer.addExplosion(pos, explosionPower, DebugColor.YELLOW);
-        });
+        }
 
         this.level().explode(null, pos.x, pos.y, pos.z, explosionPower, Level.ExplosionInteraction.TNT);
         
@@ -1374,9 +1385,9 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
             level.addFreshEntity(fragment);
             
             if (i % 5 == 0) {
-                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+                if (FMLEnvironment.getDist().isClient()) {
                     MissileDebugRenderer.addFragment(detonationPos, fragDir, fragRange, false);
-                });
+                }
             }
         }
         
@@ -1428,9 +1439,9 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
         return true;
     }
 
-    private void releaseChunkLoad() {
-        if (!this.level().isClientSide && this.level() instanceof ServerLevel serverLevel && lastForcedChunk != null) {
-            ForgeChunkManager.forceChunk(serverLevel, "cta", this.blockPosition(), lastForcedChunk.x, lastForcedChunk.z, false, true);
+    protected void releaseChunkLoad() {
+        if (!this.level().isClientSide() && this.level() instanceof ServerLevel serverLevel && lastForcedChunk != null && chunkController != null) {
+            chunkController.forceChunk(serverLevel, this.getUUID(), lastForcedChunk.x(), lastForcedChunk.z(), false, true);
             lastForcedChunk = null;
         }
     }
@@ -1453,8 +1464,8 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
     }
 
     @Override
-    public InteractionResult interact(Player player, InteractionHand hand) {
-        if (!this.level().isClientSide) {
+    public InteractionResult interact(Player player, InteractionHand hand, Vec3 location) {
+        if (!this.level().isClientSide()) {
             ItemStack heldItem = player.getItemInHand(hand);
             if (isCreateWrench(heldItem)) {
                 float delta = 15;
@@ -1474,7 +1485,7 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
             
             if (CBCCompat.isFuzeItem(heldItem)) {
                 if (isDeployed()) {
-                    player.displayClientMessage(net.minecraft.network.chat.Component.literal("Cannot change fuse on deployed missile!").withStyle(net.minecraft.ChatFormatting.RED), true);
+                    player.sendOverlayMessage(Component.literal("Cannot change fuse on deployed missile!").withStyle(net.minecraft.ChatFormatting.RED));
                     return InteractionResult.FAIL;
                 }
                 
@@ -1487,7 +1498,7 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
                 setFuze(fuzeToApply);
                 
                 this.level().playSound(null, this.blockPosition(), SoundEvents.ANVIL_USE, SoundSource.BLOCKS, 0.5f, 1.5f);
-                player.displayClientMessage(net.minecraft.network.chat.Component.literal("Fuse installed: " + heldItem.getHoverName().getString()).withStyle(net.minecraft.ChatFormatting.GREEN), true);
+                player.sendOverlayMessage(Component.literal("Fuse installed: " + heldItem.getHoverName().getString()).withStyle(net.minecraft.ChatFormatting.GREEN));
                 
                 return InteractionResult.SUCCESS;
             }
@@ -1508,14 +1519,14 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
     
     private boolean isCreateWrench(ItemStack stack) {
         if (stack.isEmpty()) return false;
-        var registryName = net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(stack.getItem());
+        Identifier registryName = BuiltInRegistries.ITEM.getKey(stack.getItem());
         if (registryName == null) return false;
         return registryName.getNamespace().equals("create") && registryName.getPath().equals("wrench");
     }
 
     @Override
-    public boolean hurt(DamageSource source, float amount) {
-        if (this.isInvulnerableTo(source) || hasDetonated) return false;
+    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
+        if (this.isInvulnerableToBase(source) || hasDetonated) return false;
         
         float health = this.entityData.get(DATA_HEALTH);
         health -= amount;
@@ -1539,109 +1550,83 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
     }
 
     @Override
-    protected float getEyeHeight(Pose pose, EntityDimensions dimensions) {
-        return dimensions.height * 0.5f;
-    }
-
-    @Override
     public EntityDimensions getDimensions(Pose pose) {
-        return EntityDimensions.scalable(0.5f, 0.5f);
+        return EntityDimensions.scalable(0.5f, 0.5f).withEyeHeight(0.25f);
     }
 
     @Override
-    public AABB getBoundingBoxForCulling() {
-        return this.getBoundingBox().inflate(1.0);
-    }
-
-    @Override
-    protected void readAdditionalSaveData(CompoundTag compound) {
-        this.entityData.set(DATA_DEPLOYED, compound.getBoolean("Deployed"));
-        this.entityData.set(DATA_HEALTH, compound.getFloat("Health"));
-        this.entityData.set(DATA_YAW, compound.getFloat("StoredYaw"));
-        this.entityData.set(DATA_PITCH, compound.getFloat("StoredPitch"));
-        this.fuel = compound.getInt("Fuel");
-        this.ticksSinceLaunch = compound.getInt("TicksSinceLaunch");
-        this.isBomb = compound.getBoolean("IsBomb");
+    protected void readAdditionalSaveData(ValueInput input) {
+        this.entityData.set(DATA_DEPLOYED, input.getBooleanOr("Deployed", false));
+        this.entityData.set(DATA_HEALTH, input.getFloatOr("Health", 0.0f));
+        this.entityData.set(DATA_YAW, input.getFloatOr("StoredYaw", 0.0f));
+        this.entityData.set(DATA_PITCH, input.getFloatOr("StoredPitch", 0.0f));
+        this.fuel = input.getIntOr("Fuel", 0);
+        this.ticksSinceLaunch = input.getIntOr("TicksSinceLaunch", 0);
+        this.isBomb = input.getBooleanOr("IsBomb", false);
         
-        if (compound.contains("WarheadType")) {
-            int warheadOrdinal = compound.getInt("WarheadType");
+        input.getInt("WarheadType").ifPresent(warheadOrdinal -> {
             this.warheadType = WarheadType.values()[Math.min(warheadOrdinal, WarheadType.values().length - 1)];
             this.entityData.set(DATA_WARHEAD_TYPE, warheadOrdinal);
-        }
+        });
         
-        if (compound.contains("Fuze", Tag.TAG_COMPOUND)) {
-            this.fuze = ItemStack.of(compound.getCompound("Fuze"));
-        } else {
-            this.fuze = ItemStack.EMPTY;
-        }
+        this.fuze = input.read("Fuze", ItemStack.OPTIONAL_CODEC).orElse(ItemStack.EMPTY);
         
-        if (compound.contains("MissileId")) {
-            this.missileId = compound.getString("MissileId");
+        input.getString("MissileId").ifPresent(id -> {
+            this.missileId = id;
             this.entityData.set(DATA_MISSILE_ID, this.missileId);
             loadConfigValues();
-        }
+        });
         
-        if (compound.contains("ModelItem")) {
-            this.modelItem = ItemStack.of(compound.getCompound("ModelItem"));
-        }
-        if (compound.contains("ControllerDir")) {
-            controllerDir = Direction.values()[compound.getInt("ControllerDir")];
-        }
+        input.read("ModelItem", ItemStack.OPTIONAL_CODEC).ifPresent(stack -> this.modelItem = stack);
+        input.getInt("ControllerDir").ifPresent(idx -> controllerDir = Direction.values()[idx]);
 
-        if (compound.contains("AttachedToShip")) {
-            this.entityData.set(DATA_ATTACHED_TO_SHIP, compound.getBoolean("AttachedToShip"));
-        }
+        this.entityData.set(DATA_ATTACHED_TO_SHIP, input.getBooleanOr("AttachedToShip", this.entityData.get(DATA_ATTACHED_TO_SHIP)));
         
-        this.hasImpacted = compound.getBoolean("HasImpacted");
-        this.impactDelayTicks = compound.getInt("ImpactDelayTicks");
+        this.hasImpacted = input.getBooleanOr("HasImpacted", false);
+        this.impactDelayTicks = input.getIntOr("ImpactDelayTicks", 0);
     }
 
     @Override
-    protected void addAdditionalSaveData(CompoundTag compound) {
-        compound.putBoolean("Deployed", this.entityData.get(DATA_DEPLOYED));
-        compound.putFloat("Health", this.entityData.get(DATA_HEALTH));
-        compound.putFloat("StoredYaw", this.entityData.get(DATA_YAW));
-        compound.putFloat("StoredPitch", this.entityData.get(DATA_PITCH));
-        compound.putInt("Fuel", this.fuel);
-        compound.putInt("TicksSinceLaunch", this.ticksSinceLaunch);
-        compound.putBoolean("IsBomb", this.isBomb);
-        compound.putString("MissileId", this.missileId);
-        compound.putInt("WarheadType", this.warheadType.ordinal());
+    protected void addAdditionalSaveData(ValueOutput output) {
+        output.putBoolean("Deployed", this.entityData.get(DATA_DEPLOYED));
+        output.putFloat("Health", this.entityData.get(DATA_HEALTH));
+        output.putFloat("StoredYaw", this.entityData.get(DATA_YAW));
+        output.putFloat("StoredPitch", this.entityData.get(DATA_PITCH));
+        output.putInt("Fuel", this.fuel);
+        output.putInt("TicksSinceLaunch", this.ticksSinceLaunch);
+        output.putBoolean("IsBomb", this.isBomb);
+        output.putString("MissileId", this.missileId);
+        output.putInt("WarheadType", this.warheadType.ordinal());
         if (!this.fuze.isEmpty()) {
-            compound.put("Fuze", this.fuze.save(new CompoundTag()));
+            output.store("Fuze", ItemStack.OPTIONAL_CODEC, this.fuze);
         }
-        compound.put("ModelItem", this.modelItem.save(new CompoundTag()));
+        output.store("ModelItem", ItemStack.OPTIONAL_CODEC, this.modelItem);
         if (this.controllerDir != null) {
-            compound.putInt("ControllerDir", this.controllerDir.ordinal());
+            output.putInt("ControllerDir", this.controllerDir.ordinal());
         }
 
-        compound.putBoolean("AttachedToShip", this.entityData.get(DATA_ATTACHED_TO_SHIP));
+        output.putBoolean("AttachedToShip", this.entityData.get(DATA_ATTACHED_TO_SHIP));
         
-        compound.putBoolean("HasImpacted", this.hasImpacted);
-        compound.putInt("ImpactDelayTicks", this.impactDelayTicks);
+        output.putBoolean("HasImpacted", this.hasImpacted);
+        output.putInt("ImpactDelayTicks", this.impactDelayTicks);
     }
 
     @Override
-    public Packet<ClientGamePacketListener> getAddEntityPacket() {
-        return NetworkHooks.getEntitySpawningPacket(this);
-    }
-
-    @Override
-    public void writeSpawnData(FriendlyByteBuf buffer) {
-        buffer.writeItem(this.modelItem);
+    public void writeSpawnData(RegistryFriendlyByteBuf buffer) {
+        ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, this.modelItem);
         buffer.writeBoolean(this.entityData.get(DATA_DEPLOYED));
         buffer.writeFloat(this.entityData.get(DATA_YAW));
         buffer.writeFloat(this.entityData.get(DATA_PITCH));
         buffer.writeBoolean(this.isBomb);
         buffer.writeUtf(this.missileId);
         buffer.writeInt(this.warheadType.ordinal());
-        buffer.writeItem(this.fuze);
+        ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, this.fuze);
         buffer.writeBoolean(this.entityData.get(DATA_ATTACHED_TO_SHIP));
     }
 
     @Override
-    public void readSpawnData(FriendlyByteBuf buffer) {
-        this.modelItem = buffer.readItem();
+    public void readSpawnData(RegistryFriendlyByteBuf buffer) {
+        this.modelItem = ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer);
         this.entityData.set(DATA_DEPLOYED, buffer.readBoolean());
         this.entityData.set(DATA_YAW, buffer.readFloat());
         this.entityData.set(DATA_PITCH, buffer.readFloat());
@@ -1649,7 +1634,7 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
         this.missileId = buffer.readUtf();
         int warheadOrdinal = buffer.readInt();
         this.warheadType = WarheadType.values()[Math.min(warheadOrdinal, WarheadType.values().length - 1)];
-        this.fuze = buffer.readItem();
+        this.fuze = ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer);
         this.entityData.set(DATA_ATTACHED_TO_SHIP, buffer.readBoolean());
         this.entityData.set(DATA_MISSILE_ID, this.missileId);
         this.entityData.set(DATA_WARHEAD_TYPE, warheadOrdinal);
@@ -1664,17 +1649,6 @@ public class MissileEntity extends Entity implements IEntityAdditionalSpawnData 
 
     public int getTicksSinceLaunch() {
         return this.ticksSinceLaunch;
-    }
-    
-    @Override
-    public void lerpTo(double x, double y, double z, float yaw, float pitch, int posRotationIncrements, boolean teleport) {
-        if (!isDeployed() && isAttachedToShip()) {
-            this.setPos(x, y, z);
-            this.setYRot(yaw);
-            this.setXRot(pitch);
-        } else {
-            super.lerpTo(x, y, z, yaw, pitch, posRotationIncrements, teleport);
-        }
     }
     
     private static record HeatSourceCandidate(Vec3 worldPos, double temperature, boolean isShipSource, BlockPos blockPos) {}

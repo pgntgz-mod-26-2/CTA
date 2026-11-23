@@ -3,15 +3,16 @@ package com.cta.client.screen;
 import com.cta.network.PacketHandler;
 import com.cta.network.SetChannelPacket;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
-
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 
 @OnlyIn(Dist.CLIENT)
 public class SetChannelScreen extends Screen {
@@ -27,7 +28,7 @@ public class SetChannelScreen extends Screen {
     }
 
     public static void open(BlockPos peripheralPos, BlockPos targetPos) {
-        Minecraft.getInstance().setScreen(new SetChannelScreen(peripheralPos, targetPos));
+        Minecraft.getInstance().setScreenAndShow(new SetChannelScreen(peripheralPos, targetPos));
     }
 
     @Override
@@ -47,11 +48,10 @@ public class SetChannelScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(graphics);
-        graphics.drawCenteredString(this.font, "Wireless Connector", this.width / 2, this.height / 2 - 35, 0xFFFFFF);
-        graphics.drawCenteredString(this.font, "Channel Name:", this.width / 2, this.height / 2 - 23, 0xAAAAAA);
-        super.render(graphics, mouseX, mouseY, partialTick);
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        graphics.centeredText(this.font, "Wireless Connector", this.width / 2, this.height / 2 - 35, 0xFFFFFFFF);
+        graphics.centeredText(this.font, "Channel Name:", this.width / 2, this.height / 2 - 23, 0xFFAAAAAA);
     }
 
     @Override
@@ -60,33 +60,33 @@ public class SetChannelScreen extends Screen {
     }
 
     @Override
-    public boolean charTyped(char codePoint, int modifiers) {
+    public boolean charTyped(CharacterEvent event) {
         if (channelInput.isFocused()) {
-            return channelInput.charTyped(codePoint, modifiers);
+            return channelInput.charTyped(event);
         }
-        return super.charTyped(codePoint, modifiers);
+        return super.charTyped(event);
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == 257) {
+    public boolean keyPressed(KeyEvent event) {
+        if (event.key() == 257) {
             sendAndClose();
             return true;
         }
-        if (keyCode == 256) {
+        if (event.key() == 256) {
             this.onClose();
             return true;
         }
         if (channelInput.isFocused()) {
-            return channelInput.keyPressed(keyCode, scanCode, modifiers);
+            return channelInput.keyPressed(event);
         }
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return super.keyPressed(event);
     }
 
     private void sendAndClose() {
         String name = channelInput.getValue().trim();
         if (!name.isEmpty()) {
-            PacketHandler.INSTANCE.sendToServer(new SetChannelPacket(peripheralPos, targetPos, name));
+            PacketHandler.sendToServer(new SetChannelPacket(peripheralPos, targetPos, name));
         }
         this.onClose();
     }

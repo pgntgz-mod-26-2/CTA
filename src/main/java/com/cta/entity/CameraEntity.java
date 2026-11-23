@@ -3,36 +3,35 @@ package com.cta.entity;
 import com.cta.network.PacketHandler;
 import com.cta.network.SetCameraViewPacket;
 import com.cta.utils.AngleLimits;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.Pose;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.entity.IEntityAdditionalSpawnData;
-import net.minecraftforge.network.NetworkHooks;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.entity.IEntityWithComplexSpawn;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
 
-public abstract class CameraEntity extends Entity implements IEntityAdditionalSpawnData {
+public abstract class CameraEntity extends Entity implements IEntityWithComplexSpawn {
     private float BASE_YAW = 0;
     private AngleLimits ANGLE_LIMIT = new AngleLimits(0, 0, 0);
     private int FOV = 70;
-    
-    public static final List<net.minecraft.world.entity.player.Player> RECENTLY_DISMOUNTED_PLAYERS = new ArrayList<>();
-    
+
+    public static final List<Player> RECENTLY_DISMOUNTED_PLAYERS = new ArrayList<>();
+
     protected WeakReference<ServerPlayer> currentlyViewing = new WeakReference<>(null);
     protected int timeout = 0;
-    
+
     protected double storedPlayerX, storedPlayerY, storedPlayerZ;
     protected float storedPlayerYaw, storedPlayerPitch;
 
@@ -41,7 +40,7 @@ public abstract class CameraEntity extends Entity implements IEntityAdditionalSp
         this.noPhysics = true;
     }
 
-    public static boolean hasRecentlyDismounted(net.minecraft.world.entity.player.Player player) {
+    public static boolean hasRecentlyDismounted(Player player) {
         return RECENTLY_DISMOUNTED_PLAYERS.contains(player);
     }
 
@@ -53,25 +52,25 @@ public abstract class CameraEntity extends Entity implements IEntityAdditionalSp
 
     public boolean startViewing(ServerPlayer player) {
         if (player.level() != this.level()) return false;
-        
+
         ServerPlayer oldViewer = this.currentlyViewing.get();
         if (oldViewer != null && oldViewer != player) {
             stopViewing(oldViewer);
         }
-        
+
         this.currentlyViewing = new WeakReference<>(player);
-        
+
         this.storedPlayerX = player.getX();
         this.storedPlayerY = player.getY();
         this.storedPlayerZ = player.getZ();
         this.storedPlayerYaw = player.getYRot();
         this.storedPlayerPitch = player.getXRot();
-        
+
         this.setYRot(BASE_YAW);
         this.setXRot(0);
-        
+
         player.setCamera(this);
-        PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new SetCameraViewPacket(this));
+        PacketHandler.sendToPlayer(player, new SetCameraViewPacket(this));
         this.timeout = 0;
         return true;
     }
@@ -79,17 +78,17 @@ public abstract class CameraEntity extends Entity implements IEntityAdditionalSp
     public void stopViewing(ServerPlayer player) {
         if (this.currentlyViewing.get() == player) {
             this.currentlyViewing.clear();
-            
+
             player.teleportTo(this.storedPlayerX, this.storedPlayerY, this.storedPlayerZ);
             player.setYRot(this.storedPlayerYaw);
             player.setXRot(this.storedPlayerPitch);
-            
+
             player.setCamera(player);
-            PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new SetCameraViewPacket(player));
-            
+            PacketHandler.sendToPlayer(player, new SetCameraViewPacket(player));
+
             RECENTLY_DISMOUNTED_PLAYERS.add(player);
         }
-        
+
         if (isShortLived()) {
             this.discard();
         }
@@ -102,20 +101,20 @@ public abstract class CameraEntity extends Entity implements IEntityAdditionalSp
     @Override
     public void tick() {
         super.tick();
-        
-        if (!this.level().isClientSide) {
+
+        if (!this.level().isClientSide()) {
             ServerPlayer player = currentlyViewing.get();
             if (player != null) {
                 if (player.isDeadOrDying() || player.level() != this.level() || player.isSpectator()) {
                     stopViewing(player);
                     return;
                 }
-                
+
                 if (player.distanceToSqr(this) > 128 * 128) {
                     stopViewing(player);
                     return;
                 }
-                
+
                 timeout = 0;
             } else if (isShortLived()) {
                 timeout++;
@@ -127,7 +126,12 @@ public abstract class CameraEntity extends Entity implements IEntityAdditionalSp
     }
 
     @Override
-    protected void defineSynchedData() {
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+    }
+
+    @Override
+    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
+        return false;
     }
 
     public void turnView(double yaw, double pitch) {
@@ -137,15 +141,15 @@ public abstract class CameraEntity extends Entity implements IEntityAdditionalSp
     public void turnView(double yaw, double pitch, boolean applyLimits) {
         float newYaw = this.getYRot() + (float) yaw;
         float newPitch = this.getXRot() + (float) pitch;
-        
+
         if (applyLimits && ANGLE_LIMIT != null) {
             float relativeYaw = newYaw - BASE_YAW;
             relativeYaw = Math.max(-ANGLE_LIMIT.maxYaw(), Math.min(ANGLE_LIMIT.maxYaw(), relativeYaw));
             newYaw = BASE_YAW + relativeYaw;
-            
+
             newPitch = Math.max(-ANGLE_LIMIT.maxPitch(), Math.min(ANGLE_LIMIT.maxPitch(), newPitch));
         }
-        
+
         this.setYRot(newYaw);
         this.setXRot(newPitch);
     }
@@ -167,16 +171,6 @@ public abstract class CameraEntity extends Entity implements IEntityAdditionalSp
     }
 
     @Override
-    protected float getEyeHeight(Pose pose, EntityDimensions dimensions) {
-        return 0.0f;
-    }
-
-    @Override
-    public double getMyRidingOffset() {
-        return 0.0;
-    }
-
-    @Override
     public boolean isNoGravity() {
         return true;
     }
@@ -188,26 +182,21 @@ public abstract class CameraEntity extends Entity implements IEntityAdditionalSp
     }
 
     @Override
-    protected void readAdditionalSaveData(CompoundTag compound) {
+    protected void readAdditionalSaveData(ValueInput input) {
     }
 
     @Override
-    protected void addAdditionalSaveData(CompoundTag compound) {
+    protected void addAdditionalSaveData(ValueOutput output) {
     }
 
     @Override
-    public Packet<ClientGamePacketListener> getAddEntityPacket() {
-        return NetworkHooks.getEntitySpawningPacket(this);
-    }
-
-    @Override
-    public void writeSpawnData(FriendlyByteBuf buffer) {
+    public void writeSpawnData(RegistryFriendlyByteBuf buffer) {
         buffer.writeFloat(BASE_YAW);
         buffer.writeInt(FOV);
     }
 
     @Override
-    public void readSpawnData(FriendlyByteBuf buffer) {
+    public void readSpawnData(RegistryFriendlyByteBuf buffer) {
         this.BASE_YAW = buffer.readFloat();
         this.FOV = buffer.readInt();
     }

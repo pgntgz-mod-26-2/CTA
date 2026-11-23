@@ -4,12 +4,16 @@ import com.cta.compat.CBCCompat;
 import com.cta.compat.VSCompat;
 import com.cta.network.PacketHandler;
 import com.cta.network.StartScopeViewPacket;
+import com.cta.registry.ModItems;
 import net.minecraft.core.BlockPos;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -21,18 +25,15 @@ import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.AABB;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.entity.IEntityAdditionalSpawnData;
-import net.minecraftforge.network.NetworkHooks;
-import net.minecraftforge.network.PacketDistributor;
-import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.neoforged.neoforge.entity.IEntityWithComplexSpawn;
 
 import javax.annotation.Nullable;
 import java.lang.ref.WeakReference;
 
-public class ScopeEntity extends Entity implements IEntityAdditionalSpawnData {
+public class ScopeEntity extends Entity implements IEntityWithComplexSpawn {
     private static final EntityDataAccessor<Float> DATA_YAW = SynchedEntityData.defineId(ScopeEntity.class,
             EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_PITCH = SynchedEntityData.defineId(ScopeEntity.class,
@@ -65,12 +66,12 @@ public class ScopeEntity extends Entity implements IEntityAdditionalSpawnData {
     }
 
     @Override
-    protected void defineSynchedData() {
-        this.entityData.define(DATA_YAW, 0.0f);
-        this.entityData.define(DATA_PITCH, 0.0f);
-        this.entityData.define(DATA_ROLL, 0.0f);
-        this.entityData.define(DATA_HEALTH, 10.0f);
-        this.entityData.define(DATA_IS_VIEWING, false);
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        builder.define(DATA_YAW, 0.0f);
+        builder.define(DATA_PITCH, 0.0f);
+        builder.define(DATA_ROLL, 0.0f);
+        builder.define(DATA_HEALTH, 10.0f);
+        builder.define(DATA_IS_VIEWING, false);
     }
 
     public void setStoredRotation(float yaw, float pitch) {
@@ -168,7 +169,7 @@ public class ScopeEntity extends Entity implements IEntityAdditionalSpawnData {
             this.xRotO = this.getXRot();
         }
 
-        if (!this.level().isClientSide) {
+        if (!this.level().isClientSide()) {
             ServerPlayer viewer = currentViewer.get();
             if (viewer != null) {
                 if (viewer.isDeadOrDying() || viewer.level() != this.level() ||
@@ -180,8 +181,8 @@ public class ScopeEntity extends Entity implements IEntityAdditionalSpawnData {
     }
 
     @Override
-    public InteractionResult interact(Player player, InteractionHand hand) {
-        if (!this.level().isClientSide) {
+    public InteractionResult interact(Player player, InteractionHand hand, Vec3 location) {
+        if (!this.level().isClientSide()) {
             ItemStack heldItem = player.getItemInHand(hand);
 
             if (isCreateWrench(heldItem)) {
@@ -190,20 +191,14 @@ public class ScopeEntity extends Entity implements IEntityAdditionalSpawnData {
                         BlockPos found = findNearbyCannonMount(5);
                         if (found != null) {
                             bindToCannonMount(found);
-                            player.displayClientMessage(
-                                    net.minecraft.network.chat.Component.literal("Scope bound to cannon mount"),
-                                    true);
+                            player.sendOverlayMessage(Component.literal("Scope bound to cannon mount"));
                             return InteractionResult.SUCCESS;
                         } else if (boundCannonMount != null) {
                             boundCannonMount = null;
-                            player.displayClientMessage(
-                                    net.minecraft.network.chat.Component.literal("Scope unbound from cannon"),
-                                    true);
+                            player.sendOverlayMessage(Component.literal("Scope unbound from cannon"));
                             return InteractionResult.SUCCESS;
                         } else {
-                            player.displayClientMessage(
-                                    net.minecraft.network.chat.Component.literal("No cannon mount found nearby"),
-                                    true);
+                            player.sendOverlayMessage(Component.literal("No cannon mount found nearby"));
                         }
                     }
 
@@ -229,7 +224,7 @@ public class ScopeEntity extends Entity implements IEntityAdditionalSpawnData {
             if (player.isShiftKeyDown()) {
                 if (!player.getAbilities().instabuild) {
                     player.getInventory()
-                            .add(modelItem.isEmpty() ? new ItemStack(com.cta.registry.ModItems.PANTHER_SCOPE.get())
+                            .add(modelItem.isEmpty() ? new ItemStack(ModItems.PANTHER_SCOPE.get())
                                     : modelItem.copy());
                 }
                 this.discard();
@@ -244,17 +239,14 @@ public class ScopeEntity extends Entity implements IEntityAdditionalSpawnData {
                 return InteractionResult.SUCCESS;
             }
         }
-        return InteractionResult.sidedSuccess(this.level().isClientSide);
+        return InteractionResult.SUCCESS;
     }
 
     public void startViewing(ServerPlayer player) {
         this.currentViewer = new WeakReference<>(player);
         this.entityData.set(DATA_IS_VIEWING, true);
 
-
-        PacketHandler.INSTANCE.send(
-                PacketDistributor.PLAYER.with(() -> player),
-            new StartScopeViewPacket(this.blockPosition()));
+        PacketHandler.sendToPlayer(player, new StartScopeViewPacket(this.blockPosition()));
     }
 
     public void stopViewing(ServerPlayer player) {
@@ -267,9 +259,7 @@ public class ScopeEntity extends Entity implements IEntityAdditionalSpawnData {
     protected boolean isCreateWrench(ItemStack stack) {
         if (stack.isEmpty())
             return false;
-        var registryName = net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(stack.getItem());
-        if (registryName == null)
-            return false;
+        Identifier registryName = BuiltInRegistries.ITEM.getKey(stack.getItem());
         return registryName.getNamespace().equals("create") && registryName.getPath().equals("wrench");
     }
 
@@ -301,8 +291,8 @@ public class ScopeEntity extends Entity implements IEntityAdditionalSpawnData {
     }
 
     @Override
-    public boolean hurt(DamageSource source, float amount) {
-        if (this.isInvulnerableTo(source))
+    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
+        if (this.isInvulnerableToBase(source))
             return false;
 
         float health = this.entityData.get(DATA_HEALTH);
@@ -331,113 +321,79 @@ public class ScopeEntity extends Entity implements IEntityAdditionalSpawnData {
     }
 
     @Override
-    protected float getEyeHeight(Pose pose, EntityDimensions dimensions) {
-        return dimensions.height * 0.5f;
-    }
-
-    @Override
     public EntityDimensions getDimensions(Pose pose) {
-        return EntityDimensions.scalable(0.5f, 0.5f);
+        return EntityDimensions.scalable(0.5f, 0.5f).withEyeHeight(0.25f);
     }
 
     @Override
-    public AABB getBoundingBoxForCulling() {
-        return this.getBoundingBox().inflate(1.0);
+    protected void readAdditionalSaveData(ValueInput input) {
+        this.entityData.set(DATA_YAW, input.getFloatOr("StoredYaw", 0.0f));
+        this.entityData.set(DATA_PITCH, input.getFloatOr("StoredPitch", 0.0f));
+        this.entityData.set(DATA_HEALTH, input.getFloatOr("Health", 10.0f));
+        this.modelItem = input.read("ModelItem", ItemStack.OPTIONAL_CODEC).orElse(ItemStack.EMPTY);
+        input.getInt("PlacementX").ifPresent(px -> this.placementBlockPos = new BlockPos(
+                px, input.getIntOr("PlacementY", 0), input.getIntOr("PlacementZ", 0)));
+        if (input.getInt("ShipLocalX").isPresent() || input.getDoubleOr("ShipLocalX", Double.NaN) == input.getDoubleOr("ShipLocalX", Double.NaN)) {
+            double sx = input.getDoubleOr("ShipLocalX", Double.NaN);
+            if (!Double.isNaN(sx)) {
+                this.shipLocalPosition = new Vec3(
+                        sx,
+                        input.getDoubleOr("ShipLocalY", 0.0),
+                        input.getDoubleOr("ShipLocalZ", 0.0));
+            }
+        }
+        this.shipLocalYaw = input.getFloatOr("ShipLocalYaw", 0.0f);
+        this.shipLocalPitch = input.getFloatOr("ShipLocalPitch", 0.0f);
+        this.shipLocalRoll = input.getFloatOr("ShipLocalRoll", 0.0f);
+
+        input.getInt("BoundCannonX").ifPresent(bx -> this.boundCannonMount = new BlockPos(
+                bx, input.getIntOr("BoundCannonY", 0), input.getIntOr("BoundCannonZ", 0)));
     }
 
     @Override
-    protected void readAdditionalSaveData(CompoundTag compound) {
-        this.entityData.set(DATA_YAW, compound.getFloat("StoredYaw"));
-        this.entityData.set(DATA_PITCH, compound.getFloat("StoredPitch"));
-        this.entityData.set(DATA_HEALTH, compound.getFloat("Health"));
-        if (compound.contains("ModelItem")) {
-            this.modelItem = ItemStack.of(compound.getCompound("ModelItem"));
-        }
-        if (compound.contains("PlacementX")) {
-            this.placementBlockPos = new BlockPos(
-                    compound.getInt("PlacementX"),
-                    compound.getInt("PlacementY"),
-                    compound.getInt("PlacementZ"));
-        }
-        if (compound.contains("ShipLocalX")) {
-            this.shipLocalPosition = new Vec3(
-                    compound.getDouble("ShipLocalX"),
-                    compound.getDouble("ShipLocalY"),
-                    compound.getDouble("ShipLocalZ"));
-        }
-        this.shipLocalYaw = compound.getFloat("ShipLocalYaw");
-        this.shipLocalPitch = compound.getFloat("ShipLocalPitch");
-        this.shipLocalRoll = compound.getFloat("ShipLocalRoll");
-
-        if (compound.contains("BoundCannonX")) {
-            this.boundCannonMount = new BlockPos(
-                    compound.getInt("BoundCannonX"),
-                    compound.getInt("BoundCannonY"),
-                    compound.getInt("BoundCannonZ"));
-        }
-    }
-
-    @Override
-    protected void addAdditionalSaveData(CompoundTag compound) {
-        compound.putFloat("StoredYaw", this.entityData.get(DATA_YAW));
-        compound.putFloat("StoredPitch", this.entityData.get(DATA_PITCH));
-        compound.putFloat("Health", this.entityData.get(DATA_HEALTH));
-        compound.put("ModelItem", this.modelItem.save(new CompoundTag()));
+    protected void addAdditionalSaveData(ValueOutput output) {
+        output.putFloat("StoredYaw", this.entityData.get(DATA_YAW));
+        output.putFloat("StoredPitch", this.entityData.get(DATA_PITCH));
+        output.putFloat("Health", this.entityData.get(DATA_HEALTH));
+        output.store("ModelItem", ItemStack.OPTIONAL_CODEC, this.modelItem);
         if (this.placementBlockPos != null) {
-            compound.putInt("PlacementX", this.placementBlockPos.getX());
-            compound.putInt("PlacementY", this.placementBlockPos.getY());
-            compound.putInt("PlacementZ", this.placementBlockPos.getZ());
+            output.putInt("PlacementX", this.placementBlockPos.getX());
+            output.putInt("PlacementY", this.placementBlockPos.getY());
+            output.putInt("PlacementZ", this.placementBlockPos.getZ());
         }
         if (this.shipLocalPosition != null) {
-            compound.putDouble("ShipLocalX", this.shipLocalPosition.x);
-            compound.putDouble("ShipLocalY", this.shipLocalPosition.y);
-            compound.putDouble("ShipLocalZ", this.shipLocalPosition.z);
+            output.putDouble("ShipLocalX", this.shipLocalPosition.x);
+            output.putDouble("ShipLocalY", this.shipLocalPosition.y);
+            output.putDouble("ShipLocalZ", this.shipLocalPosition.z);
         }
-        compound.putFloat("ShipLocalYaw", this.shipLocalYaw);
-        compound.putFloat("ShipLocalPitch", this.shipLocalPitch);
-        compound.putFloat("ShipLocalRoll", this.shipLocalRoll);
+        output.putFloat("ShipLocalYaw", this.shipLocalYaw);
+        output.putFloat("ShipLocalPitch", this.shipLocalPitch);
+        output.putFloat("ShipLocalRoll", this.shipLocalRoll);
 
         if (this.boundCannonMount != null) {
-            compound.putInt("BoundCannonX", this.boundCannonMount.getX());
-            compound.putInt("BoundCannonY", this.boundCannonMount.getY());
-            compound.putInt("BoundCannonZ", this.boundCannonMount.getZ());
+            output.putInt("BoundCannonX", this.boundCannonMount.getX());
+            output.putInt("BoundCannonY", this.boundCannonMount.getY());
+            output.putInt("BoundCannonZ", this.boundCannonMount.getZ());
         }
     }
 
     @Override
-    public void writeSpawnData(FriendlyByteBuf buffer) {
+    public void writeSpawnData(RegistryFriendlyByteBuf buffer) {
         buffer.writeFloat(this.entityData.get(DATA_YAW));
         buffer.writeFloat(this.entityData.get(DATA_PITCH));
-        buffer.writeItem(this.modelItem);
+        ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, this.modelItem);
     }
 
     @Override
-    public void readSpawnData(FriendlyByteBuf buffer) {
+    public void readSpawnData(RegistryFriendlyByteBuf buffer) {
         this.entityData.set(DATA_YAW, buffer.readFloat());
         this.entityData.set(DATA_PITCH, buffer.readFloat());
-        this.modelItem = buffer.readItem();
+        this.modelItem = ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer);
         this.setYRot(getStoredYaw());
         this.setXRot(getStoredPitch());
     }
 
     public ItemStack getModelItem() {
         return this.modelItem;
-    }
-
-    @Override
-    public Packet<ClientGamePacketListener> getAddEntityPacket() {
-        return NetworkHooks.getEntitySpawningPacket(this);
-    }
-
-    @Override
-    public void lerpTo(double x, double y, double z, float yaw, float pitch, int posRotationIncrements,
-            boolean teleport) {
-        if (shipLocalPosition != null && placementBlockPos != null) {
-            this.setPos(x, y, z);
-            this.setYRot(yaw);
-            this.setXRot(pitch);
-        } else {
-            super.lerpTo(x, y, z, yaw, pitch, posRotationIncrements, teleport);
-        }
     }
 }

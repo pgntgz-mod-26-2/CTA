@@ -9,16 +9,16 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.item.component.TooltipDisplay;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
-import javax.annotation.Nullable;
-import java.util.List;
-
+import java.util.function.Consumer;
 
 public class MissileItem extends Item {
     public final String missileId;
@@ -28,26 +28,17 @@ public class MissileItem extends Item {
     private static final Vec3 HITBOX = new Vec3(0.5, 0.5, 0.5);
 
     public MissileItem(Properties properties) {
-        super(properties);
-        this.missileId = "";
-        this.isBomb = false;
-        this.warheadType = WarheadType.HE;
+        this(properties, "", false, WarheadType.HE);
     }
 
     public MissileItem(Properties properties, String missileId) {
-        super(properties);
-        this.missileId = missileId;
-        this.isBomb = false;
-        this.warheadType = WarheadType.HE;
+        this(properties, missileId, false, WarheadType.HE);
     }
 
     public MissileItem(Properties properties, String missileId, boolean isBomb) {
-        super(properties);
-        this.missileId = missileId;
-        this.isBomb = isBomb;
-        this.warheadType = WarheadType.HE;
+        this(properties, missileId, isBomb, WarheadType.HE);
     }
-    
+
     public MissileItem(Properties properties, String missileId, boolean isBomb, WarheadType warheadType) {
         super(properties);
         this.missileId = missileId;
@@ -58,10 +49,10 @@ public class MissileItem extends Item {
     @Override
     public InteractionResult useOn(UseOnContext context) {
         Level level = context.getLevel();
-        if (!level.isClientSide) {
+        if (!level.isClientSide()) {
             Direction face = context.getClickedFace();
             BlockPos clickedBlockPos = context.getClickedPos();
-            
+
             Vec3 clickPos = context.getClickLocation();
             Vec3 localSpawnPos = clickPos.add(
                 face.getStepX() * 1.001 * (HITBOX.x / 2),
@@ -73,19 +64,19 @@ public class MissileItem extends Item {
             Direction controllerDir = null;
             if (!missilePos.equals(clickedBlockPos)) {
                 Vec3 diff = Vec3.atLowerCornerOf(clickedBlockPos).subtract(Vec3.atLowerCornerOf(missilePos));
-                controllerDir = Direction.getNearest(diff.x, diff.y, diff.z);
+                controllerDir = Direction.getApproximateNearest(diff.x, diff.y, diff.z);
             }
 
-            MissileEntity missile = ModEntities.MISSILE.get().create(level);
+            MissileEntity missile = ModEntities.MISSILE.get().create(level, EntitySpawnReason.SPAWN_ITEM_USE);
             if (missile != null) {
                 missile.setPos(localSpawnPos);
                 missile.modelItem = context.getItemInHand().copy();
                 missile.modelItem.setCount(1);
-                
+
                 missile.setMissileId(this.missileId, this.warheadType);
                 missile.setAttachedToShip(VSCompat.isOnShip(level, clickedBlockPos));
                 missile.setControllerDir(controllerDir);
-                
+
                 float playerYaw = context.getPlayer() != null ? context.getPlayer().getYRot() : context.getRotation();
                 float playerPitch = context.getPlayer() != null ? context.getPlayer().getXRot() : 0;
 
@@ -98,19 +89,19 @@ public class MissileItem extends Item {
                     snappedLocalYaw = (snappedLocalYaw + 180) % 360;
 
                 missile.setStoredRotation(snappedLocalYaw, snappedLocalPitch, 0);
-                
+
                 level.addFreshEntity(missile);
                 context.getItemInHand().shrink(1);
                 return InteractionResult.SUCCESS;
             }
         }
-        return InteractionResult.sidedSuccess(level.isClientSide);
+        return InteractionResult.SUCCESS;
     }
 
     private static float snapToCardinalPitch(float pitch) {
         while (pitch > 90) pitch -= 180;
         while (pitch < -90) pitch += 180;
-        
+
         if (pitch < -45) return -90;
         if (pitch > 45) return 90;
         return 0;
@@ -119,7 +110,7 @@ public class MissileItem extends Item {
     private static float snapToNearest90(float angle) {
         while (angle < 0) angle += 360;
         while (angle >= 360) angle -= 360;
-        
+
         if (angle < 45 || angle >= 315) return 0;
         if (angle < 135) return 90;
         if (angle < 225) return 180;
@@ -127,28 +118,29 @@ public class MissileItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack stack, @Nullable Level level, List<Component> tooltip, TooltipFlag flag) {
-        tooltip.add(Component.translatable("tooltip.cta.missile.place").withStyle(ChatFormatting.GRAY));
-        
+    public void appendHoverText(ItemStack stack, Item.TooltipContext context, TooltipDisplay tooltipDisplay,
+                                Consumer<Component> tooltip, TooltipFlag flag) {
+        tooltip.accept(Component.translatable("tooltip.cta.missile.place").withStyle(ChatFormatting.GRAY));
+
         switch (warheadType) {
             case HE:
-                tooltip.add(Component.literal("HE - High Explosive").withStyle(ChatFormatting.RED));
+                tooltip.accept(Component.literal("HE - High Explosive").withStyle(ChatFormatting.RED));
                 break;
             case HEAT:
-                tooltip.add(Component.literal("HEAT - Armor Penetrating").withStyle(ChatFormatting.GOLD));
-                tooltip.add(Component.literal("Passes through armor, detonates behind").withStyle(ChatFormatting.DARK_GRAY));
+                tooltip.accept(Component.literal("HEAT - Armor Penetrating").withStyle(ChatFormatting.GOLD));
+                tooltip.accept(Component.literal("Passes through armor, detonates behind").withStyle(ChatFormatting.DARK_GRAY));
                 break;
             case HEFRAG:
-                tooltip.add(Component.literal("HEFRAG - Fragmentation").withStyle(ChatFormatting.LIGHT_PURPLE));
-                tooltip.add(Component.literal("Explosion + fragment spray").withStyle(ChatFormatting.DARK_GRAY));
+                tooltip.accept(Component.literal("HEFRAG - Fragmentation").withStyle(ChatFormatting.LIGHT_PURPLE));
+                tooltip.accept(Component.literal("Explosion + fragment spray").withStyle(ChatFormatting.DARK_GRAY));
                 break;
         }
-        
+
         if (isBomb) {
-            tooltip.add(Component.translatable("tooltip.cta.bomb.drop").withStyle(ChatFormatting.YELLOW));
+            tooltip.accept(Component.translatable("tooltip.cta.bomb.drop").withStyle(ChatFormatting.YELLOW));
         } else {
-            tooltip.add(Component.translatable("tooltip.cta.missile.launch").withStyle(ChatFormatting.YELLOW));
+            tooltip.accept(Component.translatable("tooltip.cta.missile.launch").withStyle(ChatFormatting.YELLOW));
         }
-        super.appendHoverText(stack, level, tooltip, flag);
+        super.appendHoverText(stack, context, tooltipDisplay, tooltip, flag);
     }
 }

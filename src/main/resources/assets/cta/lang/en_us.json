@@ -13,6 +13,7 @@
   "tooltip.cta.scope.pickup": "Shift-click to pick up",
   
   "key.categories.cta": "CTA",
+  "key.category.cta.main": "CTA",
   "key.cta.scope_up": "Zoom In",
   "key.cta.scope_down": "Zoom Out",
   "key.cta.exit_scope": "Exit Scope",
@@ -101,6 +102,8 @@
   "item.cta.frag_missile": "Fragmentation Missile",
   
   "block.cta.missile_rack": "Missile Rack",
+  "block.cta.scope": "Panther Scope",
+  "block.cta.thermal_scope": "Thermal Scope",
   
   "item.cta.wireless_connector": "Wireless Connector"
 }
